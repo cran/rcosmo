@@ -13,6 +13,13 @@
 #' resulting pixels are returned.
 #' @param index.only A boolean indicating whether to return only the
 #' pixel index (TRUE), or cartesian coordinates as well (FALSE).
+#' @param save.dots A logical. A If \code{TRUE} then the
+#' dot product of each observation with the nearest
+#' child HEALPix pixel center will be returned as an attribute
+#' called "dot". Note that a 'child' pixel is any one of the
+#' four pixels contained in the current pixel in the nested
+#' scheme, at the next highest resolution.
+#' See \code{\link[rcosmo]{children}}.
 #'
 #'
 #' @return if \code{index.only = TRUE} then the output will be a HEALPix index.
@@ -52,7 +59,8 @@
 #'
 #' @export
 nestSearch <- function(target, nside,
-                       index.only = FALSE) {
+                       index.only = FALSE,
+                       save.dots = FALSE) {
 
   # # Convert the target to a list where elements are the row vectors
   # if ( is.numeric(target) && !is.matrix(target) ) { target <- list(target)
@@ -77,6 +85,10 @@ nestSearch <- function(target, nside,
     stop("Target must be data.frame, matrix or numeric vector")
   }
 
+  ln <- log2(nside)
+
+  if ( !( ln %% 1 == 0 ) ) stop("log2 of nside must be an integer")
+
   j = 0:(log2(nside)+1)
   jlen <- length(j)
   tlen <- length(target)
@@ -96,9 +108,12 @@ nestSearch <- function(target, nside,
 
   # Get the parent of the closest
   result.h <- list()
+  max.dot.index <- list()
+  dots <- list()
   for (i in 1:tlen) {
-    dots <- h.xyz[[i]] %*% target[[i]]
-    min.h <- h[[i]][max.col(t(dots), ties.method = "first")]
+    dots[[i]] <- h.xyz[[i]] %*% target[[i]]
+    max.dot.index[[i]] <- max.col(t(dots[[i]]), ties.method = "first")
+    min.h <- h[[i]][max.dot.index[[i]]]
     result.h[[i]] <- parent(min.h)
   }
 
@@ -109,10 +124,20 @@ nestSearch <- function(target, nside,
                                nested = TRUE,
                                cartesian = TRUE,
                                spix = h)
-    return(list(xyz = xyz, pix = h))
+    res <- list(xyz = xyz, pix = h)
+  } else {
+    res <- h
   }
 
-  return(h)
+  if ( save.dots ) {
+    max.dots <- vector(mode = "numeric", length = tlen)
+    for (i in 1:tlen) {
+      max.dots[i] <- dots[[i]][max.dot.index[[i]]]
+    }
+    attr(res, "dot") <- max.dots
+  }
+
+  return(res)
 }
 
 
@@ -187,7 +212,7 @@ nestSearch_step <- function(target, j2, pix.j1) {
 #'@export
 pixelWindow <- function(j1, j2, pix.j1)
 {
-  if ( j2 < 0 || j1 < 0 || pix.j1 < 0 )
+  if ( any(j2 < 0) || any(j1 < 0) || any(pix.j1 < 0) )
   {
     stop("j1, j2, and pix.j1 must all be non-negative")
   }

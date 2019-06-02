@@ -5,7 +5,8 @@
 \title{HPDataFrame class}
 \usage{
 HPDataFrame(..., nside, ordering = "nested", auto.spix = FALSE, spix,
-  assumedUniquePix = FALSE, delete.duplicates = FALSE)
+  assumedUniquePix = FALSE, delete.duplicates = FALSE,
+  save.dots = FALSE, save.duplicate.indices = FALSE)
 }
 \arguments{
 \item{...}{Data. Can be named vectors or a data.frame. May
@@ -41,6 +42,24 @@ unique pixels.}
 corresponding to duplicate pixel indices will be dropped
 from the returned HPDataFrame, and assumedUniquePix will
 be set to TRUE.}
+
+\item{save.dots}{A logical. If \code{TRUE} then the
+dot product of each observation with the nearest
+child HEALPix pixel
+center will be stored as a column called "distance" in the returned
+\code{HPDataFrame}, provided that \code{auto.spix = TRUE}.
+Note that a 'child' pixel is any one of the
+four pixels contained in the current pixel, in the nested
+scheme, at the next highest resolution.
+See \code{\link[rcosmo]{children}}.}
+
+\item{save.duplicate.indices}{A logical. If \code{TRUE} and
+\code{delete.duplicates} is also \code{TRUE}, then the
+row indices of duplicated pixels will be retained
+as an attribute called "duplicates". Note
+that row index refers to the row position of the
+duplicated pixel in the original \code{HPDataFrame},
+and not the actual pixel index itself.}
 }
 \description{
 HPDataFrames are a type of \code{data.frame} designed to carry

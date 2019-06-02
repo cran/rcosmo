@@ -38,6 +38,22 @@
 #' corresponding to duplicate pixel indices will be dropped
 #' from the returned HPDataFrame, and assumedUniquePix will
 #' be set to TRUE.
+#' @param save.dots A logical. If \code{TRUE} then the
+#' dot product of each observation with the nearest
+#' child HEALPix pixel
+#' center will be stored as a column called "distance" in the returned
+#' \code{HPDataFrame}, provided that \code{auto.spix = TRUE}.
+#' Note that a 'child' pixel is any one of the
+#' four pixels contained in the current pixel, in the nested
+#' scheme, at the next highest resolution.
+#' See \code{\link[rcosmo]{children}}.
+#' @param save.duplicate.indices A logical. If \code{TRUE} and
+#' \code{delete.duplicates} is also \code{TRUE}, then the
+#' row indices of duplicated pixels will be retained
+#' as an attribute called "duplicates". Note
+#' that row index refers to the row position of the
+#' duplicated pixel in the original \code{HPDataFrame},
+#' and not the actual pixel index itself.
 #'
 #' @details
 #' \code{HPDataFrame} with \code{auto.spix = TRUE} can be used to transform any
@@ -133,7 +149,23 @@
 HPDataFrame <- function(..., nside, ordering = "nested",
                         auto.spix = FALSE, spix,
                         assumedUniquePix = FALSE,
-                        delete.duplicates = FALSE) {
+                        delete.duplicates = FALSE,
+                        save.dots = FALSE,
+                        save.duplicate.indices = FALSE) {
+
+  if ( !is.logical(auto.spix) ) {
+    stop("auto.spix must be logical")
+  }
+
+  if ( !is.logical(assumedUniquePix) ) {
+    stop("assumedUniquePix must be logical")
+  }
+
+  if ( !is.logical(delete.duplicates) ) {
+    stop("delete.duplicates must be logical")
+  }
+
+  healpixCentered <- FALSE
 
   if ( !auto.spix ) {
 
@@ -141,6 +173,9 @@ HPDataFrame <- function(..., nside, ordering = "nested",
 
       stop("If auto.spix = FALSE, then nside must be specified")
     }
+
+    if (save.dots)
+      warning("Dot products will not be saved unless auto.spix = TRUE")
 
     if ( missing(spix) ) {
 
@@ -155,9 +190,18 @@ HPDataFrame <- function(..., nside, ordering = "nested",
     if ( nargs == 0 ) {
 
       df <- data.frame(I = rep(NA, length(pix)))
+      healpixCentered <- TRUE
+      assumedUniquePix <- TRUE
     } else {
 
       df <- data.frame(args)
+
+      if ( !(all(c("x","y","z") %in% names(df)))
+           && !(all(c("theta","phi") %in% names(df)))) {
+
+        healpixCentered <- TRUE
+        assumedUniquePix <- TRUE
+      }
     }
   } else { # auto.spix = TRUE. So, use nestSearch to determine pixel centers
 
@@ -209,7 +253,8 @@ HPDataFrame <- function(..., nside, ordering = "nested",
     }
 
     pix <- nestSearch(df[,c("x","y","z")], nside = nside,
-                      index.only = TRUE)
+                      index.only = TRUE,
+                      save.dots = save.dots)
 
     if ( !cart ) coords(df) <- "spherical"
 
@@ -220,7 +265,14 @@ HPDataFrame <- function(..., nside, ordering = "nested",
                      "nested ordering. The ordering was changed to nested."))
       ordering <- "nested"
     }
+
+    if (save.dots) {
+      df$dot <- attr(pix, "dot")
+      attr(pix, "dot") <- NULL
+    }
+
   }
+
 
   if ( length(pix) != nrow(df) ) {
 
@@ -229,19 +281,28 @@ HPDataFrame <- function(..., nside, ordering = "nested",
                 "or perhaps use auto.spix = TRUE."))
   }
 
-  if ( delete.duplicates )
-  {
+  if ( delete.duplicates ) {
+    duplicates <- duplicated(pix)
     df <- df[!duplicated(pix),]
     assumedUniquePix <- TRUE
+    pix <- unique(pix)
+    if (save.duplicate.indices)
+      attr(df, "duplicates") <- which(duplicates)
+  }
+
+  if (all(c("x","y","z") %in% names(df))) {
+    attr(df, "coords") <- "cartesian"
+  } else if (all(c("theta","phi") %in% names(df))) {
+    attr(df, "coords") <- "spherical"
   }
 
   attr(df, "pix") <- pix
   attr(df, "nside") <- nside
   attr(df, "ordering") <- ordering
-  attr(df, "healpixCentered") <- FALSE
+  attr(df, "healpixCentered") <- healpixCentered
   attr(df, "assumedUniquePix") <- assumedUniquePix
   class(df) <- c("HPDataFrame", "data.frame")
-  df
+  return(df)
 }
 
 #'@export
@@ -354,6 +415,12 @@ nside.HPDataFrame <- function( x ) {
 #'pixel boundaries at \code{nside = hp.boundaries} will be
 #'added to the plot
 #'@param hpb.col colour for the \code{hp.boundaries}
+#'@param depth_test The depth test to be applied to the
+#' plotted points. This controls how resistant the plotted
+#' object is to being obscured. This controls how resistant the plotted
+#'@param lab_depth_test The \code{\link{rgl}} depth test
+#' to be applied to the labels and pixel boundaries
+#' if present. See \code{\link[rgl]{rgl.material}}
 #'@param ... arguments passed to rgl::plot3d
 #'
 #'@return
@@ -371,7 +438,9 @@ plot.HPDataFrame <- function(x, intensities = "I",
                               type = "p", size = 1, box = FALSE,
                               axes = FALSE, aspect = FALSE,
                               col = "blue", back.col = "black", labels,
-                              hp.boundaries = 0, hpb.col = "gray", ...) {
+                              hp.boundaries = 0, hpb.col = "gray",
+                              depth_test = "less",
+                              lab_depth_test = "always", ...) {
 
   hpdf <- x
   pix <- pix(hpdf)
@@ -407,17 +476,20 @@ plot.HPDataFrame <- function(x, intensities = "I",
 
     rgl::plot3d(hpdf.xyz$x, hpdf.xyz$y, hpdf.xyz$z,
                 col = col, type = type, size = size,
-                box = box, axes = axes, add = add, aspect = aspect, ...)
+                box = box, axes = axes, add = add, aspect = aspect,
+                depth_test = depth_test, ...)
   } else {
 
     rgl::text3d(hpdf.xyz$x, hpdf.xyz$y, hpdf.xyz$z, labels,
                 col = col, type = type, size = size,
-                box = box, axes = axes, add = add, aspect = aspect, ...)
+                box = box, axes = axes, add = add, aspect = aspect,
+                depth_test = lab_depth_test, ...)
   }
 
   if ( hp.boundaries > 0 ) {
 
-    rcosmo::displayPixelBoundaries(nside = hp.boundaries, col = hpb.col)
+    rcosmo::displayPixelBoundaries(nside = hp.boundaries, col = hpb.col,
+                                   depth_test = lab_depth_test)
   }
 }
 
@@ -550,29 +622,41 @@ ordering.HPDataFrame <- function( x, new.ordering, ... ) {
 #'@export
 coords.HPDataFrame <- function( x, new.coords, healpixCentered = FALSE, ... ) {
 
+  if (missing(new.coords)) return(attr(x, "coords"))
+
   hpdf <- x
 
   ns <- rcosmo::nside(hpdf)
   od <- rcosmo::ordering(hpdf)
   pix <- rcosmo::pix(hpdf)
 
-  if ( healpixCentered == TRUE ) {
+  if ( healpixCentered ) {
 
     # Delete any coordinates so they will be created again
     # from HEALPix only
-    crd.cols <- which( names(hpdf) %in%
-                  c("x","y","z","theta","phi") )
-    if ( length(crd.cols) > 0 ) {
-
-      hpdf <- hpdf[ , -crd.cols, drop = FALSE]
-    }
+    hpdf$x <- NULL
+    hpdf$y <- NULL
+    hpdf$z <- NULL
+    hpdf$theta <- NULL
+    hpdf$phi <- NULL
 
   }
 
-  if ( new.coords == "spherical" ) {
+  if ( is.null(new.coords) ) {
+
+    hpdf$x <- NULL
+    hpdf$y <- NULL
+    hpdf$z <- NULL
+    hpdf$theta <- NULL
+    hpdf$phi <- NULL
+    attr(hpdf, "coords") <- NULL
+
+
+  } else if ( new.coords == "spherical" ) {
 
     if ( all(c("theta","phi") %in% names(hpdf)) ) {
 
+      attr(hpdf, "coords") <- "spherical"
       return(hpdf)
     }
 
@@ -601,10 +685,13 @@ coords.HPDataFrame <- function( x, new.coords, healpixCentered = FALSE, ... ) {
 
     }
 
+    attr(hpdf, "coords") <- "spherical"
+
   } else if ( new.coords == "cartesian" ) {
 
     if ( all(c("x","y","z") %in% names(hpdf)) ) {
 
+      attr(hpdf, "coords") <- "cartesian"
       return(hpdf)
     }
 
@@ -629,6 +716,8 @@ coords.HPDataFrame <- function( x, new.coords, healpixCentered = FALSE, ... ) {
       other <- hpdf[,-c(theta.i, phi.i), drop = FALSE]
       hpdf <- cbind(crds, other)
     }
+
+    attr(hpdf, "coords") <- "cartesian"
   }
 
   class(hpdf) <- unique(c("HPDataFrame", class(hpdf)))
@@ -960,9 +1049,9 @@ separatingNside <- function(df) {
 #'the  object was assumed to have rows that correspond to unique
 #'HEALPix pixel indices.
 #'
-#'@param obj Any object
+#'@param obj Any object.
 #'
-#'@return A boolean. This is TRUE if \code{obj}
+#'@return A boolean. This is \code{TRUE} if \code{obj}
 #'is a \code{\link{CMBDataFrame}} or a \code{\link{HPDataFrame}} whose
 #'rows were assumed to correspond to unique HEALPix pixel indices.
 #'
@@ -986,6 +1075,40 @@ assumedUniquePix <- function(obj) {
   return(FALSE)
 }
 
+
+
+#'Check if object is assumed to have HEALPix centered coordinates
+#'
+#'The function checks object's attribute healpixCentered. The attribute is
+#'\code{TRUE} if the  object was assumed to have rows that correspond to
+#'unique HEALPix pixel indices.
+#'
+#'@param obj Any object.
+#'
+#'@return A boolean. This is \code{TRUE} if \code{obj}
+#'is a \code{\link{CMBDataFrame}} or a \code{\link{HPDataFrame}} whose
+#'coordinates were assumed to correspond to HEALPix pixel center
+#'locations.
+#'
+#'@examples
+#'
+#' hp1 <- HPDataFrame(I=rnorm(5), nside = 1, spix = c(1,1,2,2,3))
+#' pix(hp1)
+#' coords(hp1, new.coords = "cartesian")
+#' healpixCentered(hp1)
+#'
+#' sky <- CMBDataFrame(nside = 32, coords = "cartesian", ordering = "nested")
+#' sky.s <- CMBDataFrame(sky, sample.size = 100)
+#' hpdf <- HPDataFrame(sky.s, auto.spix = TRUE)
+#' healpixCentered(hpdf)
+#'
+#'@export
+healpixCentered <- function(obj) {
+
+  if (is.CMBDataFrame(obj)) return(TRUE)
+  if (is.HPDataFrame(obj)) return(attr(obj, "healpixCentered"))
+  return(FALSE)
+}
 
 
 

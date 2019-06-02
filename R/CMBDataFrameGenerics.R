@@ -645,7 +645,7 @@ areCompatibleCMBDFs <- function(cmbdf1, cmbdf2, compare.pix = FALSE)
 
 
 
-#' Convert dataframes to CMBDataFrames
+#' Convert objects to \code{CMBDataFrame}
 #'
 #'
 #' Safely converts a \code{\link{data.frame}} to a CMBDataFrame. The
@@ -654,8 +654,13 @@ areCompatibleCMBDFs <- function(cmbdf1, cmbdf2, compare.pix = FALSE)
 #' by \code{nside}. Coordinates, if present,  are assumed to correspond to
 #' HEALPix pixel centers. The coordinates must be named either x,y,z
 #' (cartesian) or theta, phi (spherical colatitude and longitude respectively).
+#' If \code{df} is a \code{HPDataFrame} then
+#' it is possible that \code{df} has attribute \code{healpixCentered = TRUE},
+#' in which case \code{as.CMBDataFrame} will perform HEALPix centering of
+#' coordinates.
 #'
-#' @param df Any \code{data.frame} whose rows are in HEALPix order
+#' @param df Any \code{data.frame} or \code{HPDataFrame} whose rows are
+#' in HEALPix order
 #' @param ordering character string that specifies the ordering scheme
 #' ("ring" or "nested")
 #' @param nside an integer \eqn{2^k} that specifies the Nside (resolution)
@@ -669,6 +674,15 @@ areCompatibleCMBDFs <- function(cmbdf1, cmbdf2, compare.pix = FALSE)
 #' However, if \code{spix} is left blank and \code{df}
 #' is a \code{CMBDataFrame},
 #' then \code{spix} is set equal to \code{pix(df)}
+#' @param drop.coords A logical. If \code{df} is a \code{HPDataFrame} then
+#' it is possible that \code{df} has attribute \code{healpixCentered = TRUE},
+#' in which case \code{as.CMBDataFrame} will perform HEALPix centering of
+#' coordinates. If \code{drop.coords = TRUE} then this will be done by
+#' dropping existing coordinates entirely (quicker) to rely only on
+#' HEALPix pixel indices.
+#' Otherwise if \code{drop.coords = FALSE} this will be done
+#' by replacing existing coordinates with locations of HEALPix pixel
+#' centers.
 #'
 #' @return A CMBDataFrame
 #'
@@ -697,15 +711,61 @@ areCompatibleCMBDFs <- function(cmbdf1, cmbdf2, compare.pix = FALSE)
 #' pix(cmbdf)
 #'
 #' @export
-as.CMBDataFrame <- function(df, ordering, nside, spix)
+as.CMBDataFrame <- function(df, ordering, nside, spix, drop.coords = FALSE)
 {
+
   if ( !is.data.frame(df) ) {
 
-    stop(gettextf("'%s' is not a data.frame", deparse(substitute(df))))
+    stop(paste0("df is not a data.frame"))
 
   }
 
-  if ( !is.CMBDataFrame(df) ) {
+  ################ df IS A HPDataFrame ####################
+  if ( is.HPDataFrame(df) ) {
+
+    if (!assumedUniquePix(df) ) {
+      stop(paste0("If df is a HPDataFrame then its assumedUniquePix ",
+                  "attribute ",
+                  "must be TRUE."))
+    }
+
+    if ( !attr(df, "healpixCentered") ) {
+
+
+
+      if (!drop.coords) {
+
+        if ( is.null(coords(df)) ) {
+          df <- coords(df, new.coords = "cartesian", healpixCentered = TRUE)
+        } else if ( coords(df) == "spherical" ) {
+          df <- coords(df, new.coords = "spherical", healpixCentered = TRUE)
+        } else if ( coords(df) == "cartesian") {
+          df <- coords(df, new.coords = "cartesian", healpixCentered = TRUE)
+        }
+
+      } else {
+
+        df$theta <- NULL
+        df$phi <- NULL
+        df$x <- NULL
+        df$y <- NULL
+        df$z <- NULL
+        attr(df, "coords") <- NULL
+      }
+
+
+    }
+
+    if (!missing(ordering) || !missing(nside) || !missing(spix)) {
+
+      stop(paste0("If df is a HPDataFrame then the ordering, ",
+                  "nside, and spix arguments must be unspecified"))
+    }
+
+    attr(df, "assumedUniquePix") <- NULL
+    attr(df, "healpixCentered") <- NULL
+
+  } else if ( !is.CMBDataFrame(df) ) {
     ################ df IS NOT A CMBDataFrame ####################
 
     if(missing(nside) || missing(ordering))
@@ -731,14 +791,24 @@ as.CMBDataFrame <- function(df, ordering, nside, spix)
     attr(df, "row.names") <- spix
 
 
+    warn <- FALSE
     if ( ("theta" %in% names(df) && "phi" %in% names(df)) ) {
+      warn <- TRUE
       attr(df, "coords") <- "spherical"
     } else if ( ("x" %in% names(df) && "y" %in% names(df)
           && "z" %in% names(df) ) ) {
+      warn <- TRUE
       attr(df, "coords") <- "cartesian"
     } else {
       attr(df, "coords") <- NULL
     }
+
+    if (warn)
+      warning(paste0("The provided coordinates in df are assumed to be ",
+                     "HEALPix centered. If this is not the case, then ",
+                     "construct a HPDataFrame from df instead. A ",
+                     "HPDataFrame hp can be used to conduct HEALPix centering ",
+                     "with as.CMBDataFrame(hp)"))
 
   } else {
     ################ df IS  A CMBDataFrame #######################
@@ -893,20 +963,25 @@ geoArea.CMBDataFrame <- function(x)
 #' coords(df) <- "spherical"
 #' coords(df)
 #'
-#'
-#'
 #'@export
 coords.CMBDataFrame <- function( x, new.coords, ... )
 {
   cmbdf <- x
 
   # If new.coords argument is missing then return the coordinate type
-  if ( missing(new.coords) )
-  {
+  if ( missing(new.coords) ) {
+
     return(attr(cmbdf, "coords"))
-  }
-  else
-  {
+
+  } else if (is.null(new.coords)) {
+
+    cmbdf$x <- NULL
+    cmbdf$y <- NULL
+    cmbdf$z <- NULL
+    cmbdf$theta <- NULL
+    cmbdf$phi <- NULL
+
+  } else {
     new.coords <- as.character(tolower(new.coords))
 
     if ( new.coords != "spherical" && new.coords != "cartesian" )
@@ -970,10 +1045,10 @@ coords.CMBDataFrame <- function( x, new.coords, ... )
       cmbdf <- cbind.CMBDataFrame(crds, other)
       attr(cmbdf, "coords") <- "cartesian"
     }
-
-    attr(cmbdf, "coords") <- new.coords
-    return(cmbdf)
   }
+
+  attr(cmbdf, "coords") <- new.coords
+  return(cmbdf)
 }
 
 
@@ -1041,6 +1116,12 @@ coords.CMBDataFrame <- function( x, new.coords, ... )
 #'pixel boundaries at \code{nside = hp.boundaries} will be
 #'added to the plot.
 #'@param hpb.col Colour for the \code{hp.boundaries}.
+#'@param depth_test The depth test to be applied to the
+#' plotted points. This controls how resistant the plotted
+#' object is to being obscured. See \code{\link[rgl]{rgl.material}}
+#'@param lab_depth_test The \code{\link{rgl}} depth test
+#' to be applied to the labels and pixel boundaries if present.
+#' See \code{\link[rgl]{rgl.material}}
 #'@param ... Arguments passed to rgl::plot3d.
 #'
 #'@return
@@ -1059,6 +1140,8 @@ plot.CMBDataFrame <- function(x, intensities = "I",
                               axes = FALSE, aspect = FALSE,
                               col, back.col = "black", labels,
                               hp.boundaries = 0, hpb.col = "gray",
+                              depth_test = "less",
+                              lab_depth_test = "always",
                               ...) {
 
   cmbdf <- x
@@ -1101,18 +1184,21 @@ plot.CMBDataFrame <- function(x, intensities = "I",
 
     rgl::plot3d(cmbdf.xyz$x, cmbdf.xyz$y, cmbdf.xyz$z,
                 col = col, type = type, size = size,
-                box = box, axes = axes, add = add, aspect = aspect, ...)
+                box = box, axes = axes, add = add, aspect = aspect,
+                depth_test = depth_test, ...)
   } else {
 
     rgl::text3d(cmbdf.xyz$x, cmbdf.xyz$y, cmbdf.xyz$z, labels,
                 col = col, type = type, size = size,
-                box = box, axes = axes, add = add, aspect = aspect, ...)
+                box = box, axes = axes, add = add, aspect = aspect,
+                depth_test = lab_depth_test, ...)
   }
 
   if ( hp.boundaries > 0 ) {
 
     rcosmo::displayPixelBoundaries(nside = hp.boundaries,
-                                    col = hpb.col)
+                                    col = hpb.col,
+                                    depth_test = lab_depth_test)
   }
 }
 

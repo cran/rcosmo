@@ -1,7 +1,7 @@
-d2c50d3aea23b8135c13243f33f405b1 *DESCRIPTION
+0413cf7d797ead5932088a5a63284c83 *DESCRIPTION
 11da06444afc8233c93d92f2ff286607 *LICENSE
 a9bfc08136af7075cf383a0ca9f7b508 *NAMESPACE
-9d18a1e263801c7cb0adfc6e602bbc1d *NEWS.md
+045e11b1d2eb0cfe1841d83a40b0842a *NEWS.md
 2d374bf57c2e0f2251f0c2523c1384f1 *R/CMBDat.R
 b9c6be057199cc34dbf85dbf95514239 *R/CMBDataFrame.R
 acf3ad9e55a5c257dba9afa48dd43160 *R/CMBDataFrameGenerics.R
@@ -154,7 +154,7 @@ aa266674d6c7c13bb9f858a9787b8307 *man/window.Rd
 238d746953bdbac51961202b57eeab65 *man/window.data.frame.Rd
 5801a12d98b585ba18e0b9338d0f7278 *src/CovCMBHelpers.cpp
 9c0792fe418604d14764c995625e5ed6 *src/Manipulation.cpp
-b8e2898870dcda038bbf4564c2951f54 *src/MathHelpers.cpp
+b787b0ed70cf4c4740778a78136e954e *src/MathHelpers.cpp
 0e939af3e259f626e18307e9f29a766c *src/RcppExports.cpp
 d7103b5483f08346eb3103f1c9e461ab *tests/testthat.R
 7d4e2a398a9fa1a94ee91aec91e30639 *tests/testthat/references/pix2coords_nested_cartesian_02.rds
